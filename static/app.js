@@ -10,10 +10,17 @@ const questionInput = document.querySelector("#question-input");
 const askButton = document.querySelector("#ask-button");
 const globalError = document.querySelector("#global-error");
 const sourcePanel = document.querySelector("#source-panel");
+const authScreen = document.querySelector("#auth-screen");
+const appShell = document.querySelector("#app-shell");
+const loginForm = document.querySelector("#login-form");
+const passwordInput = document.querySelector("#password-input");
+const loginError = document.querySelector("#login-error");
+const logoutButton = document.querySelector("#logout-button");
 
 let documents = [];
 let selectedSourceButton = null;
 let isAsking = false;
+let documentPoller = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -81,6 +88,42 @@ function clearError() {
   globalError.textContent = "";
 }
 
+function showLogin() {
+  if (documentPoller) clearInterval(documentPoller);
+  documentPoller = null;
+  documents = [];
+  selectedSourceButton = null;
+  renderDocuments();
+  chatContent.innerHTML = "";
+  sourcePanel.innerHTML = `<div class="source-empty"><span class="section-label">Sources</span>
+    <p>Source passages will appear here when you ask a question.</p></div>`;
+  clearError();
+  appShell.hidden = true;
+  authScreen.hidden = false;
+  passwordInput.focus();
+}
+
+function showApp() {
+  authScreen.hidden = true;
+  appShell.hidden = false;
+  renderWelcome();
+  refreshDocuments();
+  if (!documentPoller) documentPoller = setInterval(refreshDocuments, 1200);
+}
+
+async function initialize() {
+  try {
+    const response = await fetch("/api/auth/status");
+    const result = await response.json();
+    if (response.ok && result.authenticated) showApp();
+    else showLogin();
+  } catch {
+    showLogin();
+    loginError.textContent = "Cannot connect to the local app server.";
+    loginError.hidden = false;
+  }
+}
+
 function updateQuestionControls() {
   const canAsk = documents.some((document) => document.status === "ready");
   questionInput.disabled = !canAsk || isAsking;
@@ -140,6 +183,10 @@ function renderWelcome() {
 async function refreshDocuments() {
   try {
     const response = await fetch("/api/documents");
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
     if (!response.ok) throw new Error(await response.text());
     documents = await response.json();
     renderDocuments();
@@ -160,6 +207,10 @@ async function uploadFiles(files) {
   try {
     const response = await fetch("/api/documents", { method: "POST", body: formData });
     const result = await response.json();
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
     if (!response.ok) throw new Error(result.detail || "PDF upload failed.");
     documents = [...documents, ...result];
     renderDocuments();
@@ -181,6 +232,10 @@ async function removeDocument(documentId) {
       method: "DELETE",
     });
     const result = await response.json();
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
     if (!response.ok) throw new Error(result.detail || "Could not remove this PDF.");
     documents = documents.filter((document) => document.id !== documentId);
     renderDocuments();
@@ -260,6 +315,11 @@ questionForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({ question }),
     });
     const result = await response.json();
+    if (response.status === 401) {
+      loadingTurn.remove();
+      showLogin();
+      return;
+    }
     if (!response.ok) throw new Error(result.detail || "Could not answer the question.");
     loadingTurn.remove();
     addMessage(question, result.answer, result.sources);
@@ -271,6 +331,43 @@ questionForm.addEventListener("submit", async (event) => {
   } finally {
     isAsking = false;
     updateQuestionControls();
+  }
+});
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginError.hidden = true;
+  const button = loginForm.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: passwordInput.value }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Sign-in failed.");
+    passwordInput.value = "";
+    showApp();
+  } catch (error) {
+    loginError.textContent = error.message || "Sign-in failed.";
+    loginError.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/auth/logout", { method: "POST" });
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!response.ok) throw new Error("Could not sign out. Please try again.");
+    showLogin();
+  } catch (error) {
+    showError(error.message || "Could not sign out.");
   }
 });
 
@@ -288,6 +385,4 @@ dropZone.addEventListener("drop", (event) => {
   uploadFiles(event.dataTransfer.files);
 });
 
-renderWelcome();
-refreshDocuments();
-setInterval(refreshDocuments, 1200);
+initialize();

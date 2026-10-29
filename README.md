@@ -72,15 +72,26 @@ python -m pip install -r requirements.txt
 notepad .env
 ```
 
-If Notepad asks whether to create the file, choose **Yes**. Add your Groq key:
+If Notepad asks whether to create the file, choose **Yes**. Add your Groq key,
+a private app password of at least 12 characters, and a session-signing secret:
 
 ```env
 GROQ_API_KEY=your_groq_api_key
+APP_PASSWORD=choose_a_private_password_at_least_12_characters
+APP_SESSION_SECRET=paste_a_random_secret_here
+APP_COOKIE_SECURE=false
 ```
 
-Save `.env` in the project root. Do not add quotes, commit the file, or share
-the key. If a key has ever been exposed, revoke it in Groq Console and replace
-it with a new one.
+Generate the session secret with:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Copy the printed value into `APP_SESSION_SECRET`. Save `.env` in the project
+root. Do not add quotes, commit the file, or share any of these values. If a
+key has ever been exposed, revoke it in Groq Console and replace it with a new
+one.
 
 ## Run the browser interface
 
@@ -91,10 +102,11 @@ activated:
 python -m uvicorn web_app:app --host 127.0.0.1 --port 8000
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Drop PDFs into the
-sidebar or click **Add PDFs**, wait until each document says **Ready**, and
-ask a question. Select a source card to inspect its passage; **Open full page**
-opens the cited PDF page in the browser's PDF viewer.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), sign in with
+`APP_PASSWORD`, and then drop PDFs into the sidebar or click **Add PDFs**.
+Wait until each document says **Ready** and ask a question. Select a source
+card to inspect its passage; **Open full page** opens the cited PDF page in
+the browser's PDF viewer.
 
 The browser UI accepts PDF files up to 50 MB each. Uploaded PDF files and a
 local document manifest are stored under `user_documents/`. The web UI uses
@@ -195,20 +207,30 @@ The browser UI talks to the local FastAPI server:
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/documents` | List documents and their indexing status. |
-| `POST` | `/api/documents` | Upload PDFs and start indexing them. |
-| `DELETE` | `/api/documents/{document_id}` | Remove a document and its vector chunks. |
-| `GET` | `/api/documents/{document_id}/file` | Open an uploaded PDF in the browser. |
-| `POST` | `/api/questions` | Retrieve passages and return an answer with sources. |
+| `GET` | `/api/auth/status` | Check whether this browser has a valid session. |
+| `POST` | `/api/auth/login` | Verify the app password and issue a session cookie. |
+| `POST` | `/api/auth/logout` | Clear the current session cookie. |
+| `GET` | `/api/documents` | List documents and their indexing status (authenticated). |
+| `POST` | `/api/documents` | Upload PDFs and start indexing (authenticated). |
+| `DELETE` | `/api/documents/{document_id}` | Remove a document and its vector chunks (authenticated). |
+| `GET` | `/api/documents/{document_id}/file` | Open an uploaded PDF (authenticated). |
+| `POST` | `/api/questions` | Retrieve passages and return an answer with sources (authenticated). |
 
-The interactive API reference is available at
-[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) while the server is
-running.
+Interactive API documentation is disabled so it cannot expose an unnecessary
+public API surface.
 
 ## Privacy and security
 
-- The browser server binds to `127.0.0.1` by default and has no login. It is
-  intended for local use; do not expose it to a public network.
+- The browser server binds to `127.0.0.1` by default. Its document and
+  question APIs require the password configured with `APP_PASSWORD`; sessions
+  are signed, expire after 12 hours, and use HttpOnly/SameSite cookies.
+- State-changing browser requests must have a matching same-origin `Origin`
+  header. Login attempts are limited to five failures per IP per 15 minutes.
+- Keep the server bound to localhost for local use. Authentication is a
+  baseline safeguard, not a substitute for a hardened deployment. If putting
+  it behind HTTPS, set `APP_COOKIE_SECURE=true`; do not expose it over plain
+  HTTP on a public network. Protect `.env`, the host, and local PDF/index
+  folders as well.
 - Uploaded PDFs, extracted text, embeddings, and the Chroma index are stored
   locally.
 - Each question and its retrieved passages are sent to Groq for generation.
@@ -237,6 +259,9 @@ downloads are mocked or avoided; tests do not verify answer quality.
   `python -m pip install -r requirements.txt`.
 - **Missing Groq key**: Check that the project-root `.env` contains
   `GROQ_API_KEY=...`, then restart the CLI or web server.
+- **Web server reports missing security settings**: Add `APP_PASSWORD` (at
+  least 12 characters) and a randomly generated `APP_SESSION_SECRET` (at
+  least 32 characters) to the project-root `.env`, then restart the server.
 - **PDF has no readable text**: It may be scanned or image-only. OCR is not
   included in this project.
 - **An answer seems wrong**: Inspect the retrieved chunks/source cards. Retrieval

@@ -141,11 +141,14 @@ This file defines the FastAPI application and endpoints used by the browser:
 | Route | What it does |
 |---|---|
 | `GET /` | Serves `static/index.html`. |
-| `GET /api/documents` | Returns the current document list and indexing statuses. |
-| `POST /api/documents` | Validates and saves PDF uploads, then starts indexing. Each file is limited to 50 MB. |
-| `DELETE /api/documents/{document_id}` | Removes a completed or failed upload and only its Chroma chunks. |
-| `GET /api/documents/{document_id}/file` | Serves the uploaded PDF inline so the browser can open a cited page. |
-| `POST /api/questions` | Embeds a question, retrieves context, calls Groq, and returns the answer and sources. |
+| `GET /api/auth/status` | Reports whether the browser has a valid signed session. |
+| `POST /api/auth/login` | Checks the configured app password and issues a signed session cookie. |
+| `POST /api/auth/logout` | Clears the signed session cookie. |
+| `GET /api/documents` | Returns the document list and indexing statuses; requires authentication. |
+| `POST /api/documents` | Validates and saves PDF uploads, then starts indexing; requires authentication. Each file is limited to 50 MB. |
+| `DELETE /api/documents/{document_id}` | Removes a completed or failed upload and its Chroma chunks; requires authentication. |
+| `GET /api/documents/{document_id}/file` | Serves an uploaded PDF inline; requires authentication. |
+| `POST /api/questions` | Retrieves context and returns a Groq answer and sources; requires authentication. |
 
 The server loads `.env` during startup. Uploaded files and `documents.json`
 are saved in `user_documents/`. The web UI uses a separate `web_pdf_chunks`
@@ -157,11 +160,19 @@ stored filename, status, page count, chunk count, progress, and any indexing
 error. If the server stops during indexing, the next startup marks that item
 as an error rather than claiming that indexing succeeded.
 
+Before serving requests, startup requires `APP_PASSWORD` (at least 12
+characters) and `APP_SESSION_SECRET` (at least 32 characters) in `.env`.
+Successful login creates a signed, HttpOnly, SameSite session cookie that
+expires after 12 hours. The API checks that cookie for all document and
+question operations, while state-changing routes also require a matching
+same-origin `Origin` header. Login allows up to five failures per IP within
+15 minutes. Interactive API documentation is disabled.
+
 ### `static/index.html` — interface structure
 
-Defines the browser page structure: document sidebar, PDF upload/drop target,
-privacy note, chat area, question form, and source panel. It loads the CSS and
-JavaScript from `/static/`.
+Defines the sign-in form and authenticated browser page: document sidebar,
+PDF upload/drop target, privacy note, chat area, question form, and source
+panel. It loads the CSS and JavaScript from `/static/`.
 
 ### `static/styles.css` — presentation
 
@@ -176,6 +187,8 @@ Connects the interface to the API. It:
 - refreshes document status from `GET /api/documents`;
 - removes documents through the delete route;
 - posts questions and renders answers and citations;
+- checks login state, submits login/logout requests, and shows the app only
+  for an authenticated session;
 - formats basic Markdown (paragraphs, headings, lists, bold, italics, and code);
 - opens the selected source's PDF at the cited page; and
 - displays upload, API, and Groq errors.
@@ -224,8 +237,12 @@ but use different Chroma collections because their document lifecycles differ.
 
 ## 7. Privacy and limitations
 
-- The web server binds to `127.0.0.1` by default and has no authentication.
-  Keep it local; do not expose it directly to the internet or a shared network.
+- The web server binds to `127.0.0.1` by default and protects its document and
+  question APIs with a shared app password and signed expiring sessions.
+  Keep it local unless you understand and harden the full deployment.
+- When using HTTPS behind a trusted reverse proxy, set `APP_COOKIE_SECURE=true`.
+  Never expose the app over public plain HTTP. Authentication alone does not
+  secure the host, proxy, environment secrets, or local PDF/index folders.
 - PDFs, extracted text, and vectors are stored on the local computer.
 - The question and retrieved passages are sent to Groq. Avoid using documents
   whose contents you are not allowed to send to that service.

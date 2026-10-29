@@ -1,15 +1,22 @@
+import hashlib
+import hmac
 import json
 import logging
+import os
+import secrets
 import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import chromadb
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from pypdf import PdfReader
 from starlette.staticfiles import StaticFiles
 
@@ -22,8 +29,14 @@ MANIFEST_PATH = UPLOAD_DIR / "documents.json"
 STATIC_DIR = BASE_DIR / "static"
 WEB_COLLECTION_NAME = "web_pdf_chunks"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+SESSION_COOKIE_NAME = "pdf_chat_session"
+SESSION_TTL_SECONDS = 12 * 60 * 60
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_MAX_FAILURES = 5
 logger = logging.getLogger(__name__)
 _lock = threading.RLock()
+_login_lock = threading.Lock()
+_login_failures = defaultdict(deque)
 _documents = {}
 _client = None
 _collection = None
@@ -74,16 +87,144 @@ def _load_documents():
 @asynccontextmanager
 async def lifespan(_application):
     load_dotenv(dotenv_path=BASE_DIR / ".env")
+    _validate_security_config()
     _load_documents()
     yield
 
 
-app = FastAPI(title="Chat with your PDFs", lifespan=lifespan)
+app = FastAPI(
+    title="Chat with your PDFs", lifespan=lifespan,
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class QuestionRequest(BaseModel):
     question: str
+
+
+class LoginRequest(BaseModel):
+    password: str = Field(max_length=1024)
+
+
+def _validate_security_config():
+    """Require a strong app password and signing secret before serving requests."""
+    if len(os.getenv("APP_PASSWORD", "")) < 12:
+        raise RuntimeError("Set APP_PASSWORD in .env to a password at least 12 characters long.")
+    if len(os.getenv("APP_SESSION_SECRET", "")) < 32:
+        raise RuntimeError(
+            "Set APP_SESSION_SECRET in .env to a random secret at least 32 characters long."
+        )
+    if os.getenv("APP_COOKIE_SECURE", "false").lower() not in {"true", "false"}:
+        raise RuntimeError("APP_COOKIE_SECURE must be either true or false.")
+
+
+def _session_signature(payload):
+    secret = os.environ["APP_SESSION_SECRET"].encode("utf-8")
+    return hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _create_session_token():
+    expires_at = int(time.time()) + SESSION_TTL_SECONDS
+    payload = f"{expires_at}.{secrets.token_urlsafe(24)}"
+    return f"{payload}.{_session_signature(payload)}"
+
+
+def _valid_session(token):
+    """Verify the signed session and reject expired or malformed cookies."""
+    if not token:
+        return False
+    try:
+        expires_text, nonce, signature = token.split(".", 2)
+        expires_at = int(expires_text)
+        payload = f"{expires_text}.{nonce}"
+        return (
+            time.time() < expires_at <= time.time() + SESSION_TTL_SECONDS
+            and hmac.compare_digest(signature, _session_signature(payload))
+        )
+    except (ValueError, KeyError):
+        return False
+
+
+def require_auth(request: Request):
+    """Reject API requests unless the browser presents a valid signed session."""
+    if not _valid_session(request.cookies.get(SESSION_COOKIE_NAME)):
+        raise HTTPException(status_code=401, detail="Sign in to use your PDF library.")
+
+
+def _require_same_origin(request: Request):
+    """Require a same-origin browser request before accepting a state change."""
+    origin = request.headers.get("origin")
+    host = request.headers.get("host", "")
+    if not origin or not host:
+        raise HTTPException(status_code=403, detail="A same-origin request is required.")
+    parsed_origin = urlsplit(origin)
+    if (
+        parsed_origin.scheme != request.url.scheme
+        or parsed_origin.netloc.lower() != host.lower()
+    ):
+        raise HTTPException(status_code=403, detail="Cross-origin requests are not allowed.")
+
+
+def _check_login_rate_limit(client_ip):
+    now = time.monotonic()
+    with _login_lock:
+        failures = _login_failures[client_ip]
+        while failures and now - failures[0] >= LOGIN_WINDOW_SECONDS:
+            failures.popleft()
+        if len(failures) >= LOGIN_MAX_FAILURES:
+            raise HTTPException(
+                status_code=429, detail="Too many sign-in attempts. Try again in 15 minutes."
+            )
+
+
+def _record_login_failure(client_ip):
+    with _login_lock:
+        _login_failures[client_ip].append(time.monotonic())
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    """Tell the browser whether the current session is authenticated."""
+    return {"authenticated": _valid_session(request.cookies.get(SESSION_COOKIE_NAME))}
+
+
+@app.post("/api/auth/login")
+def login(request: Request, credentials: LoginRequest, response: Response):
+    """Authenticate the configured app password and issue a signed session cookie."""
+    _require_same_origin(request)
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate_limit(client_ip)
+    expected_password = os.getenv("APP_PASSWORD", "")
+    if not expected_password or not hmac.compare_digest(credentials.password, expected_password):
+        _record_login_failure(client_ip)
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+    with _login_lock:
+        _login_failures.pop(client_ip, None)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=_create_session_token(),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=os.getenv("APP_COOKIE_SECURE", "false").lower() == "true",
+        samesite="strict",
+        path="/",
+    )
+    return {"authenticated": True}
+
+
+@app.post("/api/auth/logout", dependencies=[Depends(require_auth)])
+def logout(request: Request, response: Response):
+    """Clear the browser session after a same-origin logout request."""
+    _require_same_origin(request)
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        httponly=True,
+        secure=os.getenv("APP_COOKIE_SECURE", "false").lower() == "true",
+        samesite="strict",
+        path="/",
+    )
+    return {"authenticated": False}
 
 
 def _index_document(document_id):
@@ -161,7 +302,7 @@ def home():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/api/documents")
+@app.get("/api/documents", dependencies=[Depends(require_auth)])
 def list_documents():
     """List saved PDFs and their indexing status."""
     with _lock:
@@ -171,9 +312,12 @@ def list_documents():
 @app.post("/api/documents")
 async def upload_documents(
     background_tasks: BackgroundTasks,
+    request: Request,
     files: list[UploadFile] = File(...),
+    _authenticated: None = Depends(require_auth),
 ):
     """Save selected PDF uploads locally and queue their indexing."""
+    _require_same_origin(request)
     if not files:
         raise HTTPException(status_code=400, detail="Choose at least one PDF.")
     filenames = [
@@ -223,9 +367,10 @@ async def upload_documents(
     return created
 
 
-@app.delete("/api/documents/{document_id}")
-def remove_document(document_id: str):
+@app.delete("/api/documents/{document_id}", dependencies=[Depends(require_auth)])
+def remove_document(document_id: str, request: Request):
     """Remove a saved PDF and only its chunks from the local index."""
+    _require_same_origin(request)
     with _lock:
         document = _documents.get(document_id)
         if document is None:
@@ -239,7 +384,7 @@ def remove_document(document_id: str):
     return {"removed": document_id}
 
 
-@app.get("/api/documents/{document_id}/file")
+@app.get("/api/documents/{document_id}/file", dependencies=[Depends(require_auth)])
 def open_document(document_id: str):
     """Open one uploaded PDF in the browser's built-in PDF viewer."""
     with _lock:
@@ -253,10 +398,11 @@ def open_document(document_id: str):
                             content_disposition_type="inline")
 
 
-@app.post("/api/questions")
-def ask_question(request: QuestionRequest):
+@app.post("/api/questions", dependencies=[Depends(require_auth)])
+def ask_question(request: QuestionRequest, http_request: Request):
     """Retrieve supporting passages and ask Groq to answer from that context."""
     global _embedder
+    _require_same_origin(http_request)
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Enter a question.")

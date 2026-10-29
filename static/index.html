@@ -9,7 +9,20 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
+  <main id="auth-screen" class="auth-screen" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand">Chat with your PDFs</div>
+      <h1>Sign in</h1>
+      <p>Enter your local app password to open your PDF library.</p>
+      <label for="password-input">App password</label>
+      <input id="password-input" type="password" autocomplete="current-password"
+             required aria-describedby="login-error">
+      <button class="button button-primary" type="submit">Sign in</button>
+      <div id="login-error" class="login-error" role="alert" hidden></div>
+    </form>
+  </main>
+
+  <div id="app-shell" class="app-shell" hidden>
     <aside class="sidebar">
       <a class="brand" href="/">Chat with your PDFs</a>
       <div class="section-label">Documents <span id="document-count"></span></div>
@@ -21,6 +34,7 @@
       </div>
       <div id="document-list" class="document-list" aria-live="polite"></div>
       <button id="add-more-button" class="button button-outline" type="button" hidden>Add PDFs</button>
+      <button id="logout-button" class="button button-outline logout-button" type="button">Sign out</button>
       <div class="privacy-note">
         <strong>Privacy:</strong> PDFs and the search index stay on this computer.
         Your question and matching passages are sent to Groq to write the answer.

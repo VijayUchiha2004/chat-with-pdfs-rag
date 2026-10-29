@@ -19,6 +19,15 @@ button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
 
+.auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 20px; }
+.login-card { display: grid; gap: 12px; width: min(100%, 390px); padding: 28px; border: 1px solid var(--line); border-radius: 15px; background: #fff; box-shadow: 0 12px 35px #17232d12; }
+.login-card h1 { margin: 10px 0 0; font-size: 24px; }
+.login-card p { margin: 0 0 5px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.login-card label { font-size: 13px; font-weight: 650; }
+.login-card input { height: 44px; padding: 0 12px; border: 1px solid #aebfca; border-radius: 8px; }
+.login-card input:focus { outline: 2px solid #a4d8d1; border-color: var(--teal); }
+.login-error { color: #a53125; font-size: 13px; line-height: 1.45; }
+
 .app-shell {
   display: grid;
   grid-template-columns: 300px minmax(400px, 1fr) 300px;
@@ -70,6 +79,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .remove-button { border: 0; color: #788895; background: transparent; padding: 2px 4px; font-size: 17px; }
 .remove-button:hover { color: #a53125; }
 #add-more-button { width: 100%; margin-top: 12px; }
+.logout-button { width: 100%; margin-top: 10px; }
 
 .privacy-note { margin-top: auto; padding: 13px; border-radius: 10px; background: #edf2f5; color: #43596c; font-size: 12px; line-height: 1.55; }
 
