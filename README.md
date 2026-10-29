@@ -23,8 +23,7 @@ Scanned/image-only PDFs need OCR, which this project does not include.
 p1-chat-pdf/
 ├── app.py              # PDF extraction, cleaning, chunking, search, and answers
 ├── requirements.txt    # Python packages used by the app
-├── .env.example        # Template for the Groq API key
-├── .env                # Your actual key; create this locally, never share it
+├── .env                # Your local Groq API key; create this yourself, never share it
 ├── web_app.py          # Local API and browser interface backend
 ├── static/             # Browser interface files
 ├── data/               # Put the PDFs you want to search here
@@ -43,12 +42,17 @@ Run these commands from the project folder:
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
 notepad .env
 ```
 
-In `.env`, replace `your_key_here` with your Groq API key and save the file.
-Do not include quotes around the value.
+If `.env` does not exist, Notepad will ask to create it. Add your Groq key in
+this format, save the file, and do not include quotes:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+```
+
+The `.env` file is ignored by Git and must never be uploaded or shared.
 
 ## Add PDFs and run
 
