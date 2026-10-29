@@ -180,7 +180,7 @@ def main(argv=None):
         return
     load_dotenv()
     if not os.getenv("GROQ_API_KEY"):
-        print("Error: GROQ_API_KEY is missing; copy .env.example to .env and add your key.")
+        print("Error: GROQ_API_KEY is missing; create a project-root .env file and add your key.")
         return
     chunks, sources = [], []
     for pdf_path in pdf_paths:

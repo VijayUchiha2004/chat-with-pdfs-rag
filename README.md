@@ -9,6 +9,10 @@ passages with filename and page citations.
 The retrieval pipeline is implemented directly with Python libraries; this
 project does not use LangChain, LlamaIndex, or another RAG framework.
 
+For a detailed explanation of the architecture, workflows, functions,
+endpoints, and responsibilities of each file, see the
+[Project Guide](PROJECT_GUIDE.md).
+
 ## Features
 
 - Index one PDF, a folder of PDFs, or PDFs uploaded through the browser UI.
@@ -46,6 +50,7 @@ p1-chat-pdf/
 │   ├── test_app.py     # Offline RAG utility tests
 │   └── test_web_app.py # Offline web API tests
 ├── requirements.txt    # Python dependencies
+├── PROJECT_GUIDE.md    # Detailed architecture and file-by-file explanation
 ├── .gitignore          # Excludes secrets and local data
 ├── data/               # Optional PDFs for CLI use; create locally
 ├── user_documents/     # Browser uploads and manifest; created locally
