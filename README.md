@@ -1,42 +1,64 @@
 # Chat with PDFs
 
-A small local Retrieval-Augmented Generation (RAG) learning project with
-terminal and browser interfaces. It reads PDF text, splits it into overlapping
-chunks, embeds the chunks locally, retrieves relevant passages, and asks Groq
-to answer using those passages.
-It uses Python, pypdf, sentence-transformers, ChromaDB, the Groq SDK, and
-python-dotenv directly; it does not use a RAG framework.
+A local, multi-PDF question-answering app built to learn how Retrieval-Augmented
+Generation (RAG) works. Use it from a Python command line or a browser interface
+running on your computer. The app extracts text from PDFs, finds relevant
+passages for a question, and asks a language model to answer from those
+passages with filename and page citations.
 
-## What you need
+The retrieval pipeline is implemented directly with Python libraries; this
+project does not use LangChain, LlamaIndex, or another RAG framework.
+
+## Features
+
+- Index one PDF, a folder of PDFs, or PDFs uploaded through the browser UI.
+- Search PDFs from any subject together.
+- Run a terminal interface or a local browser interface.
+- Create embeddings locally with `all-MiniLM-L6-v2`.
+- Persist embeddings locally with ChromaDB.
+- Generate answers with Groq's `openai/gpt-oss-120b` model.
+- Show retrieved passages for debugging and cite the source PDF, page, and chunk.
+- Configure chunk size, overlap, and number of retrieved chunks in the CLI.
+- Keep browser uploads and their index across server restarts; remove a PDF and
+  its indexed chunks from the UI.
+- Run offline tests without calling Groq or downloading the embedding model.
+
+## Requirements
 
 - Python 3.10 or newer.
-- Internet access to install packages, download the embedding model the first
-  time it runs, and send questions to Groq.
 - A Groq API key.
-- One or more text-based PDF files. PDFs from any subject are supported.
+- Internet access to install the Python packages, download the embedding model
+  on its first use, and request answers from Groq.
+- Text-based PDFs. Scanned/image-only documents are not supported because OCR
+  is not included.
 
-Scanned/image-only PDFs need OCR, which this project does not include.
-
-## Project files
+## Project layout
 
 ```text
 p1-chat-pdf/
-├── app.py              # PDF extraction, cleaning, chunking, search, and answers
-├── requirements.txt    # Python packages used by the app
-├── .env                # Your local Groq API key; create this yourself, never share it
-├── web_app.py          # Local API and browser interface backend
-├── static/             # Browser interface files
-├── data/               # Put the PDFs you want to search here
-├── user_documents/     # Uploaded PDFs and local document list, created automatically
-└── chroma_db/          # Local vector index, created automatically
+├── app.py              # RAG pipeline and command-line interface
+├── web_app.py          # Local FastAPI server and JSON API
+├── static/
+│   ├── index.html      # Browser UI structure
+│   ├── styles.css      # Browser UI styles
+│   └── app.js          # Upload, chat, and source interactions
+├── tests/
+│   ├── test_app.py     # Offline RAG utility tests
+│   └── test_web_app.py # Offline web API tests
+├── requirements.txt    # Python dependencies
+├── .gitignore          # Excludes secrets and local data
+├── data/               # Optional PDFs for CLI use; create locally
+├── user_documents/     # Browser uploads and manifest; created locally
+└── chroma_db/          # Persistent Chroma data; created locally
 ```
 
-Keep `.env` private. It is ignored by Git, along with `chroma_db/` and the
-virtual environment.
+Create a local `.env` file yourself; it is deliberately not included in the
+repository and is ignored by Git. Local PDFs, uploads, vector data, and virtual
+environments are also excluded from Git.
 
-## Setup on Windows PowerShell
+## Setup on Windows
 
-Run these commands from the project folder:
+Run these commands in PowerShell from the project folder:
 
 ```powershell
 python -m venv venv
@@ -45,107 +67,198 @@ python -m pip install -r requirements.txt
 notepad .env
 ```
 
-If `.env` does not exist, Notepad will ask to create it. Add your Groq key in
-this format, save the file, and do not include quotes:
+If Notepad asks whether to create the file, choose **Yes**. Add your Groq key:
 
 ```env
 GROQ_API_KEY=your_groq_api_key
 ```
 
-The `.env` file is ignored by Git and must never be uploaded or shared.
+Save `.env` in the project root. Do not add quotes, commit the file, or share
+the key. If a key has ever been exposed, revoke it in Groq Console and replace
+it with a new one.
 
-## Add PDFs and run
+## Run the browser interface
 
-Copy your PDFs into `data\`. The app indexes every `.pdf` file directly inside
-the folder (it does not search nested folders by default). Then run:
-
-```powershell
-python app.py data
-```
-
-You can also index one PDF by giving its path:
-
-```powershell
-python app.py data\ods-cpp-1.pdf
-```
-
-Use `--recursive` to include PDFs inside nested folders. Chunking and retrieval
-settings can be changed from the command line:
-
-```powershell
-python app.py data --recursive --chunk-size 700 --overlap 120 --top-k 5
-```
-
-The app prints extracted text previews and retrieved passages under `DEBUG`
-before each answer. Citations show the PDF filename, page number, and chunk
-number. Answers are prompted to use simple language and concise explanations;
-the browser interface formats Markdown headings and lists for readability.
-Type a question at the prompt; type `quit` to exit.
-
-## What happens when it runs
-
-1. Extract and clean text from each PDF page.
-2. Split each page into 500-character chunks with 100 characters of overlap.
-3. Generate embeddings with `all-MiniLM-L6-v2` and save them in `chroma_db\`.
-4. Retrieve the three closest chunks for each question.
-5. Send the question and retrieved context to Groq model `openai/gpt-oss-120b`.
-
-The index is rebuilt from the selected PDF file or folder every time the app
-starts. Each run replaces the previous Chroma collection; PDFs outside the
-selected input are not included in that run.
-
-## Troubleshooting
-
-- **`ModuleNotFoundError`**: Activate the project venv, then run
-  `python -m pip install -r requirements.txt`. Using `python -m pip` helps
-  install packages into the same Python environment that runs the app.
-- **Missing API key**: Check that `.env` is in the project folder and contains
-  `GROQ_API_KEY=your_actual_key`.
-- **No PDFs found**: Confirm the folder path and that the PDFs are directly
-  inside it, not only in a nested folder.
-- **No or poor answer**: The app can only use text it successfully extracts
-  and retrieves. Scanned pages require OCR, and PDF layout or extraction
-  quality can affect results. Check the printed preview and debug chunks.
-- **Slow first run**: The embedding model is downloaded and loaded locally the
-  first time; later runs can reuse the downloaded model.
-
-## Use the browser interface
-
-Install the requirements as above, add your Groq key to `.env`, then start the
-local server:
+Start the local server from the project folder with the virtual environment
+activated:
 
 ```powershell
 python -m uvicorn web_app:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000` in your browser. Add PDFs using the upload button
-or drag and drop them. Wait for each document to show **Ready**, ask a
-question, and select a source card to inspect its passage or open the cited
-PDF page. The interface accepts PDF files up to 50 MB each.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Drop PDFs into the
+sidebar or click **Add PDFs**, wait until each document says **Ready**, and
+ask a question. Select a source card to inspect its passage; **Open full page**
+opens the cited PDF page in the browser's PDF viewer.
 
-Uploads are stored under `user_documents\`, and the browser interface uses its
-own persistent Chroma collection under `chroma_db\`. Documents remain available
-after restarting the server. Use the remove button on a document card to delete
-that uploaded copy and its indexed chunks. The command-line app keeps its
-separate collection and continues to work independently.
+The browser UI accepts PDF files up to 50 MB each. Uploaded PDF files and a
+local document manifest are stored under `user_documents/`. The web UI uses
+the `web_pdf_chunks` Chroma collection and keeps it across restarts. Remove a
+ready or failed document with its remove button; this deletes its local PDF
+copy and its indexed chunks. A document cannot be removed while it is indexing.
 
-The server binds to `127.0.0.1` so it is only available on this computer by
-default. Do not expose it to a public network: this learning app has no login.
-PDF files and embeddings stay local; each question and its retrieved passages
-are sent to Groq to generate an answer.
+Stop the server with `Ctrl+C`.
 
-## Run offline unit tests
+## Run the command-line interface
 
-The standard-library tests check text cleaning, chunking, CLI settings, and
-source metadata without calling Groq or downloading an embedding model:
+Put PDFs directly in `data/`, then pass the folder:
+
+```powershell
+python app.py data
+```
+
+By default, the CLI searches only PDFs directly inside the selected folder.
+Use `--recursive` to include nested folders, or pass one PDF path:
+
+```powershell
+python app.py data --recursive
+python app.py data\book.pdf
+```
+
+At the prompt, enter a question. The CLI prints its retrieved passages before
+the answer, followed by source citations. Type `quit` to exit.
+
+Tune retrieval and chunking from the command line:
+
+```powershell
+python app.py data --chunk-size 700 --overlap 120 --top-k 5
+```
+
+`--chunk-size` is the maximum chunk length in characters, `--overlap` is the
+number of characters repeated between adjacent chunks, and `--top-k` is the
+number of retrieved passages. The overlap must be smaller than the chunk size.
+Defaults are 500, 100, and 3. These options apply to the CLI.
+
+The CLI uses a separate `pdf_chunks` collection in `chroma_db/`; it deletes and
+rebuilds that collection each time it starts. This is separate from the
+persistent `web_pdf_chunks` collection used by the browser UI.
+
+## System design
+
+```mermaid
+flowchart LR
+    User[User] --> UI[CLI or browser UI]
+    UI --> Extract[PDF text extraction<br/>pypdf]
+    Extract --> Clean[Unicode and whitespace cleanup]
+    Clean --> Chunk[Character chunks<br/>500 chars, 100 overlap]
+    Chunk --> Embed[Local embeddings<br/>all-MiniLM-L6-v2]
+    Embed --> Store[(Persistent ChromaDB)]
+    User --> Question[Question]
+    Question --> QueryEmbed[Local question embedding]
+    QueryEmbed --> Search[Similarity search<br/>top 3 chunks]
+    Store --> Search
+    Search --> Prompt[Question + retrieved passages]
+    Prompt --> Groq[Groq API<br/>openai/gpt-oss-120b]
+    Groq --> Answer[Answer and source citations]
+    Search --> Answer
+```
+
+### Main components
+
+| Component | Responsibility |
+|---|---|
+| `app.py` | Shared text-cleaning, chunking, indexing, retrieval, prompt-building, and Groq-call functions; also provides the CLI. |
+| `web_app.py` | FastAPI routes for document upload/list/removal, PDF viewing, and question answering. |
+| `static/` | Browser interface for managing documents, asking questions, and reading source passages. |
+| `pypdf` | Extracts text page by page and provides page numbers for citations. |
+| `sentence-transformers` | Converts passages and questions into local vectors using `all-MiniLM-L6-v2`. |
+| ChromaDB | Stores vectors and source metadata on the local filesystem and retrieves similar passages. |
+| Groq | Generates the answer from the question and retrieved context. |
+
+### Indexing workflow
+
+1. **Choose documents.** The CLI reads a file or scans a folder. The browser
+   accepts one or more uploaded PDFs.
+2. **Extract and clean.** `pypdf` extracts text page by page. Cleanup normalizes
+   Unicode ligatures, joins words split by hyphens at line breaks, and tidies
+   paragraph whitespace.
+3. **Chunk and embed.** Each page is split into overlapping character chunks.
+   The local sentence-transformer model creates one vector per chunk.
+4. **Store with citations.** Chroma stores each vector with document filename,
+   page number, and chunk number. The browser also stores a document ID so its
+   chunks can be removed independently.
+5. **Retrieve and answer.** For a question, the app embeds the question, finds
+   the closest chunks, builds a context-only prompt, and sends the question
+   plus those passages to Groq.
+6. **Show evidence.** The UI displays the answer and source cards with PDF
+   filenames and page numbers. The CLI prints retrieved chunks before the
+   answer, including chunk numbers.
+
+## API routes
+
+The browser UI talks to the local FastAPI server:
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/documents` | List documents and their indexing status. |
+| `POST` | `/api/documents` | Upload PDFs and start indexing them. |
+| `DELETE` | `/api/documents/{document_id}` | Remove a document and its vector chunks. |
+| `GET` | `/api/documents/{document_id}/file` | Open an uploaded PDF in the browser. |
+| `POST` | `/api/questions` | Retrieve passages and return an answer with sources. |
+
+The interactive API reference is available at
+[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) while the server is
+running.
+
+## Privacy and security
+
+- The browser server binds to `127.0.0.1` by default and has no login. It is
+  intended for local use; do not expose it to a public network.
+- Uploaded PDFs, extracted text, embeddings, and the Chroma index are stored
+  locally.
+- Each question and its retrieved passages are sent to Groq for generation.
+  Do not ask questions about documents you are not allowed to share with that
+  service.
+- The Groq key belongs only in the ignored local `.env` file. Never put it in
+  source code, README content, screenshots, or GitHub.
+- The app does not OCR scanned pages, and its answers are not guaranteed to be
+  complete or correct. Check the cited passages against the original PDF.
+
+## Tests
+
+Run the offline suite from the project root:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
+Tests cover text cleanup, chunking, CLI options, Chroma metadata and retrieval,
+web API responses, and upload persistence. Groq calls and actual model
+downloads are mocked or avoided; tests do not verify answer quality.
+
+## Troubleshooting
+
+- **`ModuleNotFoundError`**: Activate `venv`, then run
+  `python -m pip install -r requirements.txt`.
+- **Missing Groq key**: Check that the project-root `.env` contains
+  `GROQ_API_KEY=...`, then restart the CLI or web server.
+- **PDF has no readable text**: It may be scanned or image-only. OCR is not
+  included in this project.
+- **An answer seems wrong**: Inspect the retrieved chunks/source cards. Retrieval
+  can miss relevant context, and the language model can misinterpret passages.
+- **Browser upload fails**: Use a `.pdf` file under the 50 MB per-file limit.
+- **Web document is stuck in indexing after restart**: The app marks interrupted
+  work as an error. Remove that entry and upload the PDF again.
+- **First run is slow**: The embedding model is downloaded and initialized
+  locally the first time.
+
+## Possible future improvements
+
+- OCR for scanned and image-only PDFs.
+- Token-aware or heading-aware chunking and configurable settings in the browser.
+- Better progress reporting, cancellation, and resumable indexing.
+- A source viewer that highlights the exact retrieved passage on the PDF page.
+- Optional answer-quality evaluation against a small reference question set.
+
 ## Resume summary
 
-> Built a local multi-PDF RAG application with a Python CLI and browser UI,
-> using local sentence-transformer embeddings, persistent Chroma vector search,
-> and Groq LLM responses with filename/page citations. Added asynchronous PDF
-> uploads, indexing status, configurable ingestion, and offline API/pipeline tests.
+> Built a local multi-PDF RAG application with Python CLI and browser
+> interfaces, using local sentence-transformer embeddings, persistent ChromaDB
+> retrieval, and Groq-generated answers with PDF/page citations. Implemented
+> document upload and lifecycle APIs, source-aware retrieval, and offline
+> pipeline/API tests.
+
+## License
+
+No license is currently included. Unless a license is added, others do not
+automatically have permission to reuse, modify, or redistribute this project.
