@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f5f7">
+  <title>Chat with your PDFs</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">Chat with your PDFs</a>
+      <div class="section-label">Documents <span id="document-count"></span></div>
+      <div id="drop-zone" class="drop-zone">
+        <strong>Drop PDFs here</strong>
+        <span>or choose files from your computer</span>
+        <button id="add-button" class="button button-primary" type="button">Add PDFs</button>
+        <input id="file-input" type="file" accept=".pdf,application/pdf" multiple hidden>
+      </div>
+      <div id="document-list" class="document-list" aria-live="polite"></div>
+      <button id="add-more-button" class="button button-outline" type="button" hidden>Add PDFs</button>
+      <div class="privacy-note">
+        <strong>Privacy:</strong> PDFs and the search index stay on this computer.
+        Your question and matching passages are sent to Groq to write the answer.
+      </div>
+    </aside>
+
+    <main class="chat-panel">
+      <div id="global-error" class="alert alert-error" role="alert" hidden></div>
+      <div id="chat-content" class="chat-content" aria-live="polite"></div>
+      <form id="question-form" class="composer">
+        <input id="question-input" type="text"
+               placeholder="Add a PDF first to start asking"
+               aria-label="Ask a question" disabled>
+        <button id="ask-button" class="button button-primary" type="submit" disabled>Ask</button>
+      </form>
+    </main>
+
+    <aside id="source-panel" class="source-panel">
+      <div class="source-empty">
+        <span class="section-label">Sources</span>
+        <p>Source passages will appear here when you ask a question.</p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>
