@@ -64,22 +64,22 @@ Indexing prepares PDFs before questions are asked.
      only when `--recursive` is supplied.
    - The browser accepts uploaded PDF files and saves each under a generated
      local filename.
-2. **Extract pages**  
+2. **Extract pages**
    `pypdf.PdfReader` reads each page. Pages are processed individually so the
    app can attach the correct source page to every chunk.
-3. **Clean text**  
+3. **Clean text**
    `clean_text()` applies Unicode NFKC normalization, joins words split by a
    hyphen at a line ending, joins single line breaks, and collapses repeated
    spaces while preserving paragraph breaks.
-4. **Create chunks**  
+4. **Create chunks**
    `chunk_text()` slices page text into character windows. The CLI defaults to
    500 characters with 100 characters of overlap. Overlap keeps a little
    neighboring context at chunk boundaries.
-5. **Create embeddings**  
+5. **Create embeddings**
    `SentenceTransformer("all-MiniLM-L6-v2")` converts every chunk to a numeric
    vector locally. The first run downloads the model; later runs use the local
    model cache.
-6. **Store text and metadata**  
+6. **Store text and metadata**
    Chroma stores the vector with its text and source information. The CLI
    stores a chunk number, filename, and page. The browser collection also
    stores a document ID so one uploaded file's chunks can be removed without
